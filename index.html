@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Horários de Balsa - Cabedelo / Costinha</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * {
             margin: 0;
@@ -23,7 +26,7 @@
         }
         
         .container {
-            max-width: 800px;
+            max-width: 1200px;
             width: 100%;
             background-color: white;
             border-radius: 15px;
@@ -55,6 +58,41 @@
             padding: 10px;
             text-align: center;
             font-size: 18px;
+            font-weight: bold;
+        }
+        
+        .map-container {
+            height: 400px;
+            width: 100%;
+            position: relative;
+            border-bottom: 3px solid #1a4d8f;
+        }
+        
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+        
+        .map-overlay {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+            font-size: 14px;
+            font-weight: bold;
+            color: #1a4d8f;
+        }
+        
+        .ferry-status {
+            background-color: #4CAF50;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            display: inline-block;
             font-weight: bold;
         }
         
@@ -133,7 +171,7 @@
             display: flex;
             justify-content: center;
             gap: 15px;
-            margin-top: 20px;
+            margin: 20px;
             flex-wrap: wrap;
         }
         
@@ -151,7 +189,7 @@
             border-radius: 4px;
         }
         
-        footer {
+        .footer {
             margin-top: 20px;
             text-align: center;
             color: white;
@@ -164,11 +202,9 @@
             background-color: white;
             border-radius: 10px;
             padding: 15px;
-            margin-top: 20px;
+            margin: 20px;
             text-align: center;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            max-width: 800px;
-            width: 100%;
         }
         
         .next-departure-title {
@@ -184,6 +220,39 @@
             color: #4CAF50;
         }
         
+        .ferry-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 20px;
+            padding: 15px;
+            background: linear-gradient(135deg, #1a4d8f 0%, #0d2b5c 100%);
+            border-radius: 10px;
+            color: white;
+        }
+        
+        .ferry-position {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .progress-bar-container {
+            width: 100%;
+            height: 20px;
+            background-color: #e0e0e0;
+            border-radius: 10px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            border-radius: 10px;
+            transition: width 1s ease;
+            width: 0%;
+        }
+        
         @media (max-width: 600px) {
             .time-grid {
                 grid-template-columns: 1fr;
@@ -197,6 +266,10 @@
                 flex-direction: column;
                 align-items: center;
             }
+            
+            .map-container {
+                height: 300px;
+            }
         }
     </style>
 </head>
@@ -209,6 +282,32 @@
         
         <div class="current-time" id="current-time">
             Carregando horário atual...
+        </div>
+        
+        <!-- Mapa da Travessia -->
+        <div class="map-container">
+            <div id="map"></div>
+            <div class="map-overlay" id="mapStatus">
+                <i class="fas fa-ship"></i> Status: <span id="ferryStatusText">Aguardando...</span>
+            </div>
+        </div>
+        
+        <!-- Informações da Balsa -->
+        <div class="ferry-info">
+            <div>
+                <i class="fas fa-anchor"></i> <span id="currentLocation">Cabedelo</span>
+            </div>
+            <div>
+                <span class="ferry-status" id="ferryStatus">Em Porto</span>
+            </div>
+            <div>
+                <i class="fas fa-flag-checkered"></i> <span id="destinationLocation">Costinha</span>
+            </div>
+        </div>
+        
+        <!-- Barra de Progresso -->
+        <div class="progress-bar-container">
+            <div class="progress-bar-fill" id="progressBar"></div>
         </div>
         
         <div class="schedule-container">
@@ -248,14 +347,21 @@
         </div>
     </div>
     
-    <footer>
+    <div class="footer">
         Sistema de Horários de Balsa<br>
         Departamento de Estradas de Rodagem do Estado da Paraíba DER-PB<br>
         Atualizado em: 20/10/2025
-    </footer>
+    </div>
 
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
     <script>
-        // Horários de saída CORRIGIDOS conforme a imagem
+        // Coordenadas reais de Cabedelo e Costinha (aproximadas)
+        const CABEDELO_COORDS = [-6.9811, -34.8339]; // Porto de Cabedelo
+        const COSTINHA_COORDS = [-6.9595, -34.8581]; // Praia de Costinha
+        
+        // Horários de saída
         const cabedeloTimes = [
             '06:00', '07:00', '08:00', '09:00', '10:00', '11:00',
             '12:00', '13:00', '14:00', '15:00', '16:00', '17:00',
@@ -268,19 +374,192 @@
             '18:30', '19:30'
         ];
         
+        // Variáveis globais
+        let map;
+        let ferryMarker;
+        let routeLine;
+        let currentPosition = 0; // 0 = Cabedelo, 1 = Costinha
+        let currentTrip = null;
+        
         // Elementos DOM
         const cabedeloSchedule = document.getElementById('cabedelo-schedule');
         const costinhaSchedule = document.getElementById('costinha-schedule');
         const currentTimeElement = document.getElementById('current-time');
         const nextDepartureElement = document.getElementById('next-departure');
         
+        // Inicializar mapa
+        function initMap() {
+            map = L.map('map').setView([-6.9703, -34.8460], 14);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            // Adicionar marcadores dos portos
+            L.marker(CABEDELO_COORDS)
+                .addTo(map)
+                .bindPopup('Cabedelo - Porto de Saída')
+                .openPopup();
+            
+            L.marker(COSTINHA_COORDS)
+                .addTo(map)
+                .bindPopup('Costinha - Porto de Chegada');
+            
+            // Desenhar rota
+            routeLine = L.polyline([CABEDELO_COORDS, COSTINHA_COORDS], {
+                color: '#1a4d8f',
+                weight: 3,
+                opacity: 0.7,
+                dashArray: '10, 10'
+            }).addTo(map);
+            
+            // Criar marcador da balsa
+            const ferryIcon = L.divIcon({
+                className: 'ferry-marker',
+                html: '<i class="fas fa-ship" style="font-size: 24px; color: #4CAF50;"></i>',
+                iconSize: [30, 30]
+            });
+            
+            ferryMarker = L.marker(CABEDELO_COORDS, { icon: ferryIcon })
+                .addTo(map)
+                .bindPopup('Balsa em tempo real');
+        }
+        
+        // Calcular posição da balsa baseada no horário
+        function updateFerryPosition() {
+            const now = new Date();
+            const currentMinutes = now.getHours() * 60 + now.getMinutes();
+            
+            // Encontrar a viagem atual
+            let activeTrip = null;
+            let tripType = null;
+            
+            // Verificar viagens saindo de Cabedelo
+            for (let time of cabedeloTimes) {
+                const [hours, minutes] = time.split(':').map(Number);
+                const departureTime = hours * 60 + minutes;
+                
+                if (currentMinutes >= departureTime && currentMinutes <= departureTime + 30) {
+                    activeTrip = departureTime;
+                    tripType = 'cabedelo';
+                    break;
+                }
+            }
+            
+            // Verificar viagens saindo de Costinha
+            if (!activeTrip) {
+                for (let time of costinhaTimes) {
+                    const [hours, minutes] = time.split(':').map(Number);
+                    const departureTime = hours * 60 + minutes;
+                    
+                    if (currentMinutes >= departureTime && currentMinutes <= departureTime + 30) {
+                        activeTrip = departureTime;
+                        tripType = 'costinha';
+                        break;
+                    }
+                }
+            }
+            
+            if (activeTrip && tripType) {
+                // Calcular progresso da viagem (0 a 30 minutos)
+                const progress = (currentMinutes - activeTrip) / 30;
+                
+                // Atualizar posição da balsa
+                let start, end;
+                if (tripType === 'cabedelo') {
+                    start = CABEDELO_COORDS;
+                    end = COSTINHA_COORDS;
+                    document.getElementById('currentLocation').textContent = 'Cabedelo';
+                    document.getElementById('destinationLocation').textContent = 'Costinha';
+                } else {
+                    start = COSTINHA_COORDS;
+                    end = CABEDELO_COORDS;
+                    document.getElementById('currentLocation').textContent = 'Costinha';
+                    document.getElementById('destinationLocation').textContent = 'Cabedelo';
+                }
+                
+                // Interpolar posição
+                const lat = start[0] + (end[0] - start[0]) * progress;
+                const lng = start[1] + (end[1] - start[1]) * progress;
+                
+                ferryMarker.setLatLng([lat, lng]);
+                
+                // Atualizar barra de progresso
+                document.getElementById('progressBar').style.width = (progress * 100) + '%';
+                
+                // Atualizar status
+                document.getElementById('ferryStatus').textContent = 'Em Travessia';
+                document.getElementById('ferryStatus').className = 'ferry-status';
+                document.getElementById('ferryStatusText').textContent = 'Em Travessia';
+            } else {
+                // Balsa está no porto
+                let atCabedelo = true;
+                
+                // Verificar se a próxima partida é de Cabedelo ou Costinha
+                const nextDeparture = findNextDeparture(currentMinutes);
+                if (nextDeparture) {
+                    atCabedelo = nextDeparture.location === 'Cabedelo';
+                }
+                
+                if (atCabedelo) {
+                    ferryMarker.setLatLng(CABEDELO_COORDS);
+                    document.getElementById('currentLocation').textContent = 'Cabedelo';
+                    document.getElementById('destinationLocation').textContent = 'Costinha';
+                    document.getElementById('ferryStatus').textContent = 'Em Porto (Cabedelo)';
+                } else {
+                    ferryMarker.setLatLng(COSTINHA_COORDS);
+                    document.getElementById('currentLocation').textContent = 'Costinha';
+                    document.getElementById('destinationLocation').textContent = 'Cabedelo';
+                    document.getElementById('ferryStatus').textContent = 'Em Porto (Costinha)';
+                }
+                
+                document.getElementById('ferryStatus').className = 'ferry-status';
+                document.getElementById('progressBar').style.width = '0%';
+                document.getElementById('ferryStatusText').textContent = 'Em Porto';
+            }
+            
+            // Centralizar mapa na balsa
+            map.setView(ferryMarker.getLatLng(), 14);
+        }
+        
+        // Encontrar próxima partida
+        function findNextDeparture(currentMinutes) {
+            let nextTime = null;
+            let nextLocation = '';
+            
+            // Verificar partidas de Cabedelo
+            for (let time of cabedeloTimes) {
+                const [hours, minutes] = time.split(':').map(Number);
+                const departureTime = hours * 60 + minutes;
+                
+                if (departureTime > currentMinutes && (!nextTime || departureTime < nextTime)) {
+                    nextTime = departureTime;
+                    nextLocation = 'Cabedelo';
+                }
+            }
+            
+            // Verificar partidas de Costinha
+            for (let time of costinhaTimes) {
+                const [hours, minutes] = time.split(':').map(Number);
+                const departureTime = hours * 60 + minutes;
+                
+                if (departureTime > currentMinutes && (!nextTime || departureTime < nextTime)) {
+                    nextTime = departureTime;
+                    nextLocation = 'Costinha';
+                }
+            }
+            
+            if (nextTime) {
+                return { time: nextTime, location: nextLocation };
+            }
+            return null;
+        }
+        
         // Inicializar horários
         function initializeSchedules() {
-            // Limpar horários existentes
             cabedeloSchedule.innerHTML = '';
             costinhaSchedule.innerHTML = '';
             
-            // Adicionar horários de Cabedelo (apenas horas cheias)
             cabedeloTimes.forEach(time => {
                 const timeSlot = document.createElement('div');
                 timeSlot.className = 'time-slot';
@@ -289,7 +568,6 @@
                 cabedeloSchedule.appendChild(timeSlot);
             });
             
-            // Adicionar horários de Costinha (apenas horas e meia)
             costinhaTimes.forEach(time => {
                 const timeSlot = document.createElement('div');
                 timeSlot.className = 'time-slot';
@@ -298,22 +576,16 @@
                 costinhaSchedule.appendChild(timeSlot);
             });
             
-            // Atualizar status dos horários
             updateScheduleStatus();
         }
         
-        // Atualizar status dos horários (ativo, próximo, passado)
+        // Atualizar status dos horários
         function updateScheduleStatus() {
             const now = new Date();
-            const currentTime = now.getHours() * 60 + now.getMinutes(); // Tempo atual em minutos
+            const currentTime = now.getHours() * 60 + now.getMinutes();
             
-            // Atualizar horários de Cabedelo
             updateLocationSchedule(cabedeloSchedule, currentTime);
-            
-            // Atualizar horários de Costinha
             updateLocationSchedule(costinhaSchedule, currentTime);
-            
-            // Atualizar próxima partida
             updateNextDeparture(currentTime);
         }
         
@@ -327,39 +599,31 @@
                 const [hours, minutes] = time.split(':').map(Number);
                 const slotTime = hours * 60 + minutes;
                 
-                // Resetar classes
                 slot.classList.remove('active', 'upcoming', 'past', 'next-departure');
                 
-                // Verificar se é um horário ativo (até 10 minutos após a partida)
                 if (currentTime >= slotTime && currentTime <= slotTime + 10) {
                     slot.classList.add('active');
                 }
-                // Verificar se é um horário próximo (15 minutos antes)
                 else if (currentTime >= slotTime - 15 && currentTime < slotTime) {
                     slot.classList.add('upcoming');
                     
-                    // Marcar como próxima partida
                     if (!nextDeparture || slotTime < nextDeparture) {
                         nextDeparture = slotTime;
-                        // Remover a classe de todos os slots primeiro
                         timeSlots.forEach(s => s.classList.remove('next-departure'));
-                        // Adicionar apenas ao próximo
                         slot.classList.add('next-departure');
                     }
                 }
-                // Verificar se é um horário passado
                 else if (currentTime > slotTime + 10) {
                     slot.classList.add('past');
                 }
             });
         }
         
-        // Atualizar informação da próxima partida
+        // Atualizar próxima partida
         function updateNextDeparture(currentTime) {
             let nextTime = null;
             let nextLocation = '';
             
-            // Verificar próxima partida de Cabedelo
             cabedeloTimes.forEach(time => {
                 const [hours, minutes] = time.split(':').map(Number);
                 const slotTime = hours * 60 + minutes;
@@ -370,7 +634,6 @@
                 }
             });
             
-            // Verificar próxima partida de Costinha
             costinhaTimes.forEach(time => {
                 const [hours, minutes] = time.split(':').map(Number);
                 const slotTime = hours * 60 + minutes;
@@ -381,7 +644,6 @@
                 }
             });
             
-            // Atualizar elemento
             if (nextTime !== null) {
                 const hours = Math.floor(nextTime / 60);
                 const minutes = nextTime % 60;
@@ -407,15 +669,20 @@
             currentTimeElement.textContent = now.toLocaleDateString('pt-BR', options);
         }
         
-        // Inicializar
-        initializeSchedules();
-        updateCurrentTime();
-        
-        // Atualizar a cada segundo
-        setInterval(() => {
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', function() {
+            initMap();
+            initializeSchedules();
             updateCurrentTime();
-            updateScheduleStatus();
-        }, 1000);
+            updateFerryPosition();
+            
+            // Atualizar a cada segundo
+            setInterval(() => {
+                updateCurrentTime();
+                updateScheduleStatus();
+                updateFerryPosition();
+            }, 1000);
+        });
     </script>
 </body>
 </html>
